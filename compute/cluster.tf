@@ -336,6 +336,11 @@ resource "null_resource" "join-nodes" {
   }
 }
 
+# kubectl -n kube-system delete helmcharts.helm.cattle.io traefik
+# install dashboard
+# deploy rclone csi
+
+
 
 # resource "null_resource" "deploy-condor" {
 #     count = 1
