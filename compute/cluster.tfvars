@@ -1,0 +1,9 @@
+priv_network_name = "fermi-net"
+pub_network_name = "fisica7"
+master_image_id = ""
+slave_image_id = ""
+master_flavor_name = ""
+slave_flavor_name = ""
+n_slaves = 2
+volume_size = 10
+iam_token = ""

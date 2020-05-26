@@ -1,0 +1,15 @@
+---
+- hosts: schedd
+   tasks:
+    - parted:
+        device: /dev/vdc
+        number: 1
+        state: present
+    - filesystem:
+        fstype: xfs
+        dev: /dev/vdc1
+    - mount:
+        path: /mnt/spool
+        src: /dev/vdc1 
+        fstype: xfs
+        state: mounted
