@@ -26,7 +26,7 @@ Change the admin password in `docker-compose.yaml` (both client and server conta
 
 ```bash
 cd storage
-mkdir data:/data
+mkdir data
 docker compose up -d
 ```
 
