@@ -1,4 +1,19 @@
 ---
  - hosts: localhost
    tasks:
-    - 
+    - name: get csi-rclone
+      shell: git clone https://github.com/wunderio/csi-rclone.git
+    - name: install csi-rclone
+      shell: kubectl apply -f csi-rclone/deploy/kubernetes/ && rm -fr csi-rclone
+    - name: label master
+      shell: kubectl label nodes {{ collector_node_name }} --label condor=ccb
+    - name: label schedd
+      shell: kubectl label nodes {{ schedd_node_name }} --label condor=schedd
+    - name: apply manifest
+      k8s:
+        state: present
+        definition: "{{ lookup('template', 'template/manifest.yaml') }}"
+    - name: dump template locali
+      template:
+        src: template/manifest.yaml
+        dest: manifest_fermi.yaml 

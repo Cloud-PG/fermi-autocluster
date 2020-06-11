@@ -1,0 +1,25 @@
+version: '3.7'
+services:
+  minio:
+    network_mode: host
+    image: minio/minio
+    command:
+      - "server"
+      - "--address"
+      - ":9000"
+      - "/data"
+    environment:
+      MINIO_ACCESS_KEY: demominio
+      MINIO_SECRET_KEY: CHANGEME 
+    volumes:
+      - data:/data
+      - ./certs:/root/.minio/certs
+      - ./keys:/root/.minio/keys
+  minio_client:
+    network_mode: host
+    image: minio/mc
+    entrypoint:
+      - "sleep"
+      - "365d"
+    environment:
+      MC_HOST_myminio: https://demominio:CHANGEME@127.0.0.1:9000

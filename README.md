@@ -14,11 +14,8 @@
  limitations under the License.
 -->
 
-# Fermi cluster with Terraform
+# Fermi cluster and storage setup
 
-## Requirements
+- [MINIO setup](storage/README.md)
+- [HTCondor Cluster setup](compute/README.md)
 
-- Terraform
-- Ansible
-- k3sup
-- kubectl

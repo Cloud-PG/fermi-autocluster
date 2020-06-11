@@ -13,7 +13,7 @@
     type: Opaque
     stringData:
       fermi.local.repo.pub: |
-        {{ cvmfs-key }}
+        {{ cvmfs.key }}
     ---
     # Source: htcondor/templates/cvmfs-pod.yaml
     # TODO configmap
@@ -25,7 +25,7 @@
       name: default-local
     data:
       fermi.local.repo.conf: |
-        CVMFS_SERVER_URL= {{ cvmfs-url }}
+        CVMFS_SERVER_URL= {{ cvmfs.url }}
         CVMFS_PUBLIC_KEY=/etc/cvmfs/keys/fermi.local.repo.pub
         CVMFS_HTTP_PROXY=DIRECT
     ---
@@ -37,11 +37,11 @@
     data:
       .config.yaml: |
         iam:
-          client_secret: {{ iam-client-secret }}
-          client_id: {{ iam-client-id }}
-          token: {{ iam-access-token }}
-          endpoint: {{ iam-token-endpoint }}
-          credentials:  {{ iam-credential-endpoin }}
+          client_secret: {{ iam.client-secret }}
+          client_id: {{ iam.client-id }}
+          token: {{ iam.access-token }}
+          endpoint: {{ iam.token-endpoint }}
+          credentials:  {{ iam.credential-endpoint }}
     ---
     # Source: htcondor/templates/htc-schedd-pv.yaml
     apiVersion: v1
@@ -52,7 +52,7 @@
         condor: schedd
     spec:
       capacity:
-        storage: "{{ spool-pv-size }}"
+        storage: "{{ spool.pv-size }}"
       # volumeMode field requires BlockVolume Alpha feature gate to be enabled.
       volumeMode: Filesystem
       accessModes:
@@ -82,7 +82,7 @@
       storageClassName: local-storage
       resources:
         requests:
-          storage: "{{ spool-pvc-size }}"
+          storage: "{{ spool.pvc-size }}"
     ---
     # Source: htcondor/templates/tts-role.yaml
     apiVersion: rbac.authorization.k8s.io/v1
@@ -255,7 +255,7 @@
             - name: CONDOR_HOST
               value:   "{{ condor_pub_ip }}"
             - name: PROXY_CACHE
-              value: "{{ master_priv_ip }}:30080"
+              value: "{{ master.priv_ip }}:30080"
             - name: SEC_DAEMON_AUTHENTICATION_METHODS
               value: CLAIMTOBE
             - name: SEC_CLIENT_AUTHENTICATION_METHODS
@@ -643,9 +643,13 @@
           remote: "s3"
           remotePath: "home"
           s3-provider: "Minio"
-          s3-endpoint: "{{ minio_endpoint }}"
-          s3-access-key-id: "{{ minio_access_key_id }}"
-          s3-secret-access-key: "{{ minio_access_key_key }}"
+          s3-endpoint: "{{ minio.endpoint }}"
+          s3-access-key-id: "{{ minio.access_key_id }}"
+          s3-secret-access-key: "{{ minio.access_key_key }}"
+          vfs-cache-mode: "full"
+          vfs-cache-max-size: "10G"
+          vfs-read-chunk-size: "10M"
+          vfs-read-chunk-size-limit: "100M"
           no-check-certificate: "true"
     ---
     apiVersion: v1
@@ -657,7 +661,7 @@
       - ReadWriteMany
       resources:
         requests:
-          storage: "{{ minio-pvc-size }}Gi"
+          storage: "{{ minio.pvc-size }}Gi"
       storageClassName: rclone
       selector:
         matchLabels:
