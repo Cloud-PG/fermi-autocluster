@@ -1,0 +1,289 @@
+tosca_definitions_version: tosca_simple_yaml_1_0
+
+imports:
+  - dodas_custom_types: https://raw.githubusercontent.com/dodas-ts/dodas-templates/master/tosca-types/dodas_custom_apps/htc_type.yml
+  - grafana_custom_types: https://raw.githubusercontent.com/dodas-ts/dodas-templates/master/tosca-types/dodas_custom_apps/grafana_type.yml
+
+description: TOSCA template for a complete CMS computing cluster on top of K8s orchestrator
+
+topology_template:
+
+  inputs:
+
+    number_of_masters:
+      type: integer
+      default: 1
+
+    num_cpus_master:
+      type: integer
+      default: 2
+
+    mem_size_master:
+      type: string
+      default: "4 GB"
+
+    number_of_slaves:
+      type: integer
+      default: 2
+
+    num_cpus_slave:
+      type: integer
+      default: 4
+
+    mem_size_slave:
+      type: string
+      default: "8 GB"
+
+    server_image:
+      type: string
+      #default: "ost://openstack.fisica.unipg.it/cb87a2ac-5469-4bd5-9cce-9682c798b4e4"
+      #default: "ost://horizon.cloud.cnaf.infn.it/3d993ab8-5d7b-4362-8fd6-af1391edca39"
+      # default: "ost://cloud.recas.ba.infn.it/1113d7e8-fc5d-43b9-8d26-61906d89d479"
+      default: "ost://cloud-api-pub.cr.cnaf.infn.it/94a76d1e-cacb-48ce-ad69-c0b26fd9bb53"
+
+  node_templates:
+
+    helm_prom:
+      type: tosca.nodes.DODAS.HelmInstall
+      properties:
+        name: "prometheus"
+        chart: "stable/prometheus"
+        repos: []
+        values_file: |
+          server:
+            service:
+              type: NodePort
+              nodePort: 30080
+            persistentVolume:
+              enabled: false
+          alertmanager:
+            enabled: false
+      requirements:
+        - host: k8s_master_server
+        - dependency: k8s_slave_ccb
+
+    helm_kube_eagle:
+      type: tosca.nodes.DODAS.HelmInstall
+      properties:
+        name: "kube-eagle"
+        chart: "kube-eagle/kube-eagle"
+        repos:
+          - { name: kube-eagle, url: "https://raw.githubusercontent.com/cloudworkz/kube-eagle-helm-chart/master" }
+        # TODO: create namespace
+        #inline_options:
+        #  - "--namespace monitoring"
+      requirements:
+        - host: k8s_master_server
+        - dependency: k8s_slave_ccb
+
+    # CREATE GRAFANA ADMIN PASSWORD AND SECRET
+    ## TODO: also create namespace
+    grafana_secrets:
+      type: tosca.nodes.DODAS.KubeCreate
+      properties:
+        externalParams: [] # TO BE REMOVED IN TYPES
+        name: grafana-secrets
+        manifest_file: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: grafana-secrets
+          type: Opaque
+          stringData:
+            admin-user: admin
+            admin-password: testme
+      requirements:
+        - host: k8s_master_server
+        - dependency: k8s_slave_ccb
+
+    helm_grafana:
+      type: tosca.nodes.DODAS.HelmInstall.Grafana
+      properties:
+        name: "grafana"
+        chart: "stable/grafana"
+        repos: []
+        prometheus_host: { get_attribute: [ k8s_master_server , private_address, 0 ] }
+        values_file: |
+          admin:
+            existingSecret: grafana-secrets
+          service:
+            type: NodePort
+            nodePort: 31900
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+              - name: Prometheus
+                type: prometheus
+                url: http://{{ prometheus_host }}:30080
+                access: proxy
+                isDefault: true
+          dashboards:
+            default:
+              prometheus-stats:
+                # Ref: https://grafana.com/dashboards/10000
+                gnetId: 10000
+                revision: 1
+                datasource: Prometheus
+              kube-eagle-stats:
+                # Ref: https://grafana.com/dashboards/9871
+                gnetId: 9871
+                revision: 2
+                datasource: Prometheus
+          dashboardProviders:
+            dashboardproviders.yaml:
+              apiVersion: 1
+              providers:
+              - name: 'default'
+                orgId: 1
+                folder: ''
+                type: file
+                disableDeletion: false
+                editable: true
+                options:
+                  path: /var/lib/grafana/dashboards
+      requirements:
+        - host: k8s_master_server
+        - dependency: grafana_secrets
+        - dependency: helm_prom
+
+    k8s_master:
+      type: tosca.nodes.DODAS.FrontEnd.Kubernetes
+      properties:
+        admin_token: testme
+        kube_version: 1.17.0
+      requirements:
+        - host: k8s_master_server
+
+    k8s_slave_ccb:
+      type: tosca.nodes.DODAS.WorkerNode.Kubernetes
+      properties:
+        front_end_ip: { get_attribute: [ k8s_master_server, private_address, 0 ] }
+        kube_version: 1.17.0
+        nodelabel: "condor=ccb"
+      requirements:
+        - host: k8s_server_ccb
+
+    k8s_slave_schedd:
+      type: tosca.nodes.DODAS.WorkerNode.Kubernetes
+      properties:
+        front_end_ip: { get_attribute: [ k8s_master_server, private_address, 0 ] }
+        kube_version: 1.17.0
+        nodelabel: "condor=schedd"
+      requirements:
+        - host: k8s_server_schedd
+
+    k8s_slave_wn:
+      type: tosca.nodes.DODAS.WorkerNode.Kubernetes
+      properties:
+        front_end_ip: { get_attribute: [ k8s_master_server, private_address, 0 ] }
+        kube_version: 1.17.0
+      requirements:
+        - host: k8s_server_wn
+
+    k8s_master_server:
+      type: tosca.nodes.indigo.Compute
+      capabilities:
+        endpoint:
+          properties:
+            # network_name: infn-farm.PUBLIC
+            network_name: PUBLIC
+            ports:
+              kube_port:
+                protocol: tcp
+                source: 30443
+              grafana_dash:
+                protocol: tcp
+                source: 31900
+        scalable:
+          properties:
+            count: { get_input: number_of_masters }
+        host:
+          properties:
+            # instance_type:  m1.medium
+            num_cpus: { get_input: num_cpus_master }
+            mem_size: { get_input: mem_size_master }
+        os:
+          properties:
+            image: { get_input: server_image }
+
+    k8s_server_ccb:
+      type: tosca.nodes.indigo.Compute
+      capabilities:
+        endpoint:
+          properties:
+            network_name: PUBLIC
+            ports:
+              collector:
+                protocol: tcp
+                source: 9618
+              shared:
+                protocol: tcp
+                source_range: [ 100 , 45000 ]
+        scalable:
+          properties:
+            count: 1
+        host:
+          properties:
+            #instance_type:  m1.medium
+            num_cpus: { get_input: num_cpus_slave }
+            mem_size: { get_input: mem_size_slave }
+        os:
+          properties:
+            # image: "ost://openstack.fisica.unipg.it/d9a41aed-3ebf-42f9-992e-ef0078d3de95"
+            image: { get_input: server_image }
+
+    k8s_server_schedd:
+      type: tosca.nodes.indigo.Compute
+      capabilities:
+        endpoint:
+          properties:
+            network_name: PUBLIC
+            ports:
+              schedd:
+                protocol: tcp
+                source: 9618
+              registration:
+                protocol: tcp
+                source: 48080
+              shared:
+                protocol: tcp
+                source_range: [ 100 , 45000 ]
+        scalable:
+          properties:
+            count: 1
+        host:
+          properties:
+            #instance_type:  m1.medium
+            num_cpus: { get_input: num_cpus_slave }
+            mem_size: { get_input: mem_size_slave }
+        os:
+          properties:
+            # image: "ost://openstack.fisica.unipg.it/d9a41aed-3ebf-42f9-992e-ef0078d3de95"
+            image: { get_input: server_image }
+
+    k8s_server_wn:
+      type: tosca.nodes.indigo.Compute
+      capabilities:
+        endpoint:
+          properties:
+            #network_name: test-net.PRIVATE
+            network_name: PRIVATE
+        scalable:
+          properties:
+            count: { get_input: number_of_slaves }
+        host:
+          properties:
+            #instance_type:  m1.medium
+            num_cpus: { get_input: num_cpus_slave }
+            mem_size: { get_input: mem_size_slave }
+        os:
+          properties:
+            # image: "ost://openstack.fisica.unipg.it/d9a41aed-3ebf-42f9-992e-ef0078d3de95"
+            image: { get_input: server_image }
+
+  outputs:
+    k8s_endpoint:
+      value: { concat: [ 'https://', get_attribute: [ k8s_master_server, public_address, 0 ], ':30443' ] }
+    grafane_endpoint:
+      value: { concat: [ 'http://', get_attribute: [ k8s_master_server, public_address, 0 ], ':31900/d/JABGX_-mz/cluster-monitoring-for-kubernetes?orgId=1&refresh=10s' ] }
