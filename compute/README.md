@@ -5,7 +5,9 @@
 - Ansible
 - git
 - kubectl and a valid KUBECONFIG env var
-- K8s cluster with master on public IP, and 2 other nodes with a publicIP with ports 9618 and [31024, 32048] opened. For user registration schedd will also need prot 48080.
+- K8s cluster with:
+    - master on public IP with open port 6443, 31900, 30443
+    - 2 other nodes with a publicIP with ports 9618 and [31024, 32048] opened. For user registration schedd will also need port 48080 open on one of the two.
 
 ## Values
 
