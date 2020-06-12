@@ -10,35 +10,36 @@
 ## Values
 
 ```yaml
-collector_node_name:
-schedd_node_name:
-
 schedd_pub_ip:
 condor_pub_ip:
 master_priv_ip:
 
+collector_node_name: ""
+schedd_node_name: ""
+
 cvmfs:
     key: |
-
-    url:
+      KEY HERE
+      sdsdasdasd
+    url: http://193.204.89.114/cvmfs/fermi.local.repo
 
 
 iam:
-    client-secret:
-    client-id:
-    access-token:
-    token-endpoint:
-    credential-endpoint:
+    clientSecret:
+    clientID:
+    accessToken:
+    tokenEndpoint: https://dodas-iam.cloud.cnaf.infn.it//token
+    credentialEndpoint: https://dodas-tts.cloud.cnaf.infn.it/api/v2/iam/credential
 
 spool:
-    pv-size:
-    pvc-size:
+    pvSize: 10Gi
+    pvcSize: 9Gi
 
 minio:
-  pv-size:
-  pvc-size:
-  endpoint:
-  access_key_id:
+  pvSize: 800Gi
+  pvcSize: 799Gi
+  endpoint: https://141.250.7.19:9000
+  access_key_id: 
   access_key_key:
 ```
 
