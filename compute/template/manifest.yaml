@@ -646,11 +646,12 @@ spec:
       s3-endpoint: "{{ minio.endpoint }}"
       s3-access-key-id: "{{ minio.access_key_id }}"
       s3-secret-access-key: "{{ minio.access_key_key }}"
-      vfs-cache-mode: "full"
-      vfs-cache-max-size: "10G"
-      vfs-read-chunk-size: "10M"
-      vfs-read-chunk-size-limit: "100M"
       no-check-certificate: "true"
+      vfs-cache-mode: "writes"
+      vfs-cache-max-size: "4G"
+      #vfs-read-chunk-size: "1M"
+      #vfs-read-chunk-size-limit: "-1"
+      no-modtime: "true"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
