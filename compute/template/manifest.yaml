@@ -1,567 +1,606 @@
 ---
-    # Source: htcondor/templates/tts-serviceaccount.yaml
-    apiVersion: v1
-    kind: ServiceAccount
+# Source: htcondor/templates/tts-serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tts-account
+---
+# Source: htcondor/templates/cvmfs-pod.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fermi
+type: Opaque
+stringData:
+  fermi.local.repo.pub: |
+{{ cvmfs.key | indent(4, True) }}
+---
+# Source: htcondor/templates/cvmfs-pod.yaml
+# TODO configmap
+# DO it without passing string, but with parsing dict!
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-local
+data:
+  fermi.local.repo.conf: |
+    CVMFS_SERVER_URL={{ cvmfs.url }}
+    CVMFS_PUBLIC_KEY=/etc/cvmfs/keys/fermi.local.repo.pub
+    CVMFS_HTTP_PROXY=DIRECT
+---
+# Source: htcondor/templates/tts-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ttsconfig
+data:
+  .config.yaml: |
+    iam:
+      client_secret: {{ iam.clientSecret }}
+      client_id: {{ iam.clientID }}
+      token: {{ iam.accessToken }}
+      endpoint: {{ iam.tokenEndpoint }}
+      credentials:  {{ iam.credentialEndpoint }}
+---
+# Source: htcondor/templates/htc-schedd-pv.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: schedd-pv
+  labels:
+    condor: schedd
+spec:
+  capacity:
+    storage: "{{ spool.pvSize }}"
+  # volumeMode field requires BlockVolume Alpha feature gate to be enabled.
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: local-storage
+  local:
+    path: "/mnt/spool/"
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+          - key: condor
+            operator: In
+            values:
+              - schedd
+---
+# Source: htcondor/templates/htc-schedd-pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: schedd-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  storageClassName: local-storage
+  resources:
+    requests:
+      storage: "{{ spool.pvcSize }}"
+---
+# Source: htcondor/templates/tts-role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: tts-role
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watc
+---
+# Source: htcondor/templates/tts-rolebinding.yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: tts-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: tts-account
+roleRef:
+  kind: Role
+  name: tts-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: htcondor/templates/cvmfs-pod.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cvmfs
+  labels:
+    app.kubernetes.io/name: cvmfs-pod
+spec:
+  template:
     metadata:
-      name: tts-account
-    ---
-    # Source: htcondor/templates/cvmfs-pod.yaml
-    apiVersion: v1
-    kind: Secret
-    metadata:
-      name: fermi
-    type: Opaque
-    stringData:
-      fermi.local.repo.pub: |
-        {{ cvmfs.key }}
-    ---
-    # Source: htcondor/templates/cvmfs-pod.yaml
-    # TODO configmap
-    # DO it without passing string, but with parsing dict!
-    
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: default-local
-    data:
-      fermi.local.repo.conf: |
-        CVMFS_SERVER_URL= {{ cvmfs.url }}
-        CVMFS_PUBLIC_KEY=/etc/cvmfs/keys/fermi.local.repo.pub
-        CVMFS_HTTP_PROXY=DIRECT
-    ---
-    # Source: htcondor/templates/tts-configmap.yaml
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: ttsconfig
-    data:
-      .config.yaml: |
-        iam:
-          client_secret: {{ iam.client-secret }}
-          client_id: {{ iam.client-id }}
-          token: {{ iam.access-token }}
-          endpoint: {{ iam.token-endpoint }}
-          credentials:  {{ iam.credential-endpoint }}
-    ---
-    # Source: htcondor/templates/htc-schedd-pv.yaml
-    apiVersion: v1
-    kind: PersistentVolume
-    metadata:
-      name: schedd-pv
       labels:
-        condor: schedd
+        app.kubernetes.io/name: cvmfs
     spec:
-      capacity:
-        storage: "{{ spool.pv-size }}"
-      # volumeMode field requires BlockVolume Alpha feature gate to be enabled.
-      volumeMode: Filesystem
-      accessModes:
-      - ReadWriteOnce
-      persistentVolumeReclaimPolicy: Delete
-      storageClassName: local-storage
-      local:
-        path: "/mnt/spool/"
-      nodeAffinity:
-        required:
-          nodeSelectorTerms:
-           - matchExpressions:
-             - key: condor
-               operator: In
-               values:
-                 - schedd
-    ---
-    # Source: htcondor/templates/htc-schedd-pvc.yaml
-    apiVersion: v1
-    kind: PersistentVolumeClaim
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - cvmfs
+            topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: condor
+                operator: NotIn
+                values:
+                - ccb
+                - schedd
+
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+        - 8.8.8.8
+      containers:
+      - name: cvmfs
+        image: "dodasts/cvmfs:k8s-dev"
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REPO_LIST
+          value:   "fermi.local.repo"
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+        volumeMounts:
+        - mountPath: "/cvmfs"
+          name: cvmfs
+          mountPropagation: Bidirectional
+        - mountPath: "/etc/cvmfs/config.d"
+          name: configd
+        - mountPath: "/etc/cvmfs/keys"
+          name: fermi
+      restartPolicy: Always
+      volumes:
+      - name: cvmfs
+        hostPath:
+          path: "/cvmfs"
+          type: DirectoryOrCreate
+      - name: configd
+        configMap:
+          name: default-local
+      - name: fermi
+        secret:
+          secretName: fermi
+          defaultMode: 420
+        # TODO CONFIGMAP
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cvmfs
+  replicas: 1
+---
+# Source: htcondor/templates/htc-master-pod.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ccb-pod
+  labels:
+    app.kubernetes.io/name: htc-master-pod
+spec:
+  template:
     metadata:
-      name: schedd-claim
+      labels:
+        app.kubernetes.io/name: htc-master
     spec:
-      accessModes:
-        - ReadWriteOnce
-      volumeMode: Filesystem
-      storageClassName: local-storage
-      resources:
-        requests:
-          storage: "{{ spool.pvc-size }}"
-    ---
-    # Source: htcondor/templates/tts-role.yaml
-    apiVersion: rbac.authorization.k8s.io/v1
-    kind: Role
-    metadata:
-      creationTimestamp: null
-      name: tts-role
-    rules:
-      - apiGroups:
-          - ""
+      priorityClassName: system-node-critical
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: condor
+                operator: In
+                values:
+                - ccb
+
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - htc-master
+            topologyKey: kubernetes.io/hostname
+      hostNetwork: true
+      serviceAccountName: tts-account
+      containers:
+      - name: tts
+        imagePullPolicy: "IfNotPresent"
+        image: "dodasts/tts-cache:v0.1.3-k8s-12"
+        args:
+          - --get-proxy
+          - --period
+          - "120"
+          - "--config"
+          - "/app/.config.yaml"
         resources:
-          - secrets
-        verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watc
-    ---
-    # Source: htcondor/templates/tts-rolebinding.yaml
-    kind: RoleBinding
-    apiVersion: rbac.authorization.k8s.io/v1
-    metadata:
-      name: tts-role-binding
-    subjects:
-      - kind: ServiceAccount
-        name: tts-account
-    roleRef:
-      kind: Role
-      name: tts-role
-      apiGroup: rbac.authorization.k8s.io
-    ---
-    # Source: htcondor/templates/cvmfs-pod.yaml
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: cvmfs
-      labels:
-        app.kubernetes.io/name: cvmfs-pod
-    spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: cvmfs
-        spec:
-          affinity:
-            podAntiAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchExpressions:
-                  - key: app.kubernetes.io/name
-                    operator: In
-                    values:
-                    - cvmfs
-                topologyKey: kubernetes.io/hostname
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: condor
-                    operator: NotIn
-                    values:
-                    - ccb
-                    - schedd
-    
-          dnsPolicy: None
-          dnsConfig:
-            nameservers:
-            - 8.8.8.8
-          containers:
-          - name: cvmfs
-            image: "dodasts/cvmfs:k8s-dev"
-            imagePullPolicy: IfNotPresent
-            env:
-            - name: REPO_LIST
-              value:   "fermi.local.repo"
-            securityContext:
-              privileged: true
-              capabilities:
-                add:
-                - SYS_ADMIN
-            volumeMounts:
-            - mountPath: "/cvmfs"
-              name: cvmfs
-              mountPropagation: Bidirectional
-            - mountPath: "/etc/cvmfs/config.d"
-              name: configd
-            - mountPath: "/etc/cvmfs/keys"
-              name: fermi
-          restartPolicy: Always
-          volumes:
-          - name: cvmfs
-            hostPath:
-              path: "/cvmfs"
-              type: DirectoryOrCreate
-          - name: configd
-            configMap:
-              name: default-local
-          - name: fermi
-            secret:
-              secretName: fermi
-              defaultMode: 420
-            # TODO CONFIGMAP
-      selector:
-        matchLabels:
-          app.kubernetes.io/name: cvmfs
-      replicas: 1
-    ---
-    # Source: htcondor/templates/htc-master-pod.yaml
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: ccb-pod
-      labels:
-        app.kubernetes.io/name: htc-master-pod
-    spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: htc-master
-        spec:
-          priorityClassName: system-node-critical
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: condor
-                    operator: In
-                    values:
-                    - ccb
-    
-            podAntiAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchExpressions:
-                  - key: app.kubernetes.io/name
-                    operator: In
-                    values:
-                    - htc-master
-                topologyKey: kubernetes.io/hostname
-          hostNetwork: true
-          serviceAccountName: tts-account
-          containers:
-          - name: tts
-            imagePullPolicy: "IfNotPresent"
-            image: "dodasts/tts-cache:v0.1.3-k8s-12"
-            args:
-              - --get-proxy
-              - --period
-              - "120"
-              - "--config"
-              - "/app/.config.yaml"
-            resources:
-              limits:
-                memory: "500M"
-                cpu: "100m"
-            volumeMounts:
-              - name: proxydir
-                mountPath: /root/proxy
-          - name: ccb
-            imagePullPolicy: IfNotPresent
-            args:
-            - master
-            env:
-            - name: NETWORK_INTERFACE
-              value:   "{{ schedd_pub_ip }}"
-            - name: CONDOR_HOST
-              value:   "{{ condor_pub_ip }}"
-            - name: PROXY_CACHE
-              value: "{{ master.priv_ip }}:30080"
-            - name: SEC_DAEMON_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: SEC_CLIENT_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: SEC_NEGOTIATOR_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: SEC_ADVERTISE_STARTD_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: CONDOR_DAEMON_LIST
-              value: COLLECTOR, MASTER, NEGOTIATOR, SCHEDD, STARTD
-    
-            image: "dodasts/htcondor:v0.1.0-k8s-schedd-3"
-            livenessProbe:
-              exec:
-                command:
-                - voms-proxy-info
-                - --file
-                - /root/proxy/gwms_proxy
-                - --exists
-                - --valid
-                - "6:00"
-              initialDelaySeconds: 300
-              periodSeconds: 600
-            volumeMounts:
-              - name: proxydir
-                mountPath: /root/proxy
-          volumes:
+          limits:
+            memory: "500M"
+            cpu: "100m"
+        volumeMounts:
           - name: proxydir
-            emptyDir: {}
-      selector:
-        matchLabels:
-          app.kubernetes.io/name: htc-master
-    
-      replicas: 1
-    ---
-    # Source: htcondor/templates/htc-schedd-pod.yaml
-    apiVersion: apps/v1
-    kind: Deployment
+            mountPath: /root/proxy
+      - name: ccb
+        imagePullPolicy: IfNotPresent
+        args:
+        - master
+        env:
+        - name: NETWORK_INTERFACE
+          value:   "{{ schedd_pub_ip }}"
+        - name: CONDOR_HOST
+          value:   "{{ condor_pub_ip }}"
+        - name: PROXY_CACHE
+          value: "{{ master_priv_ip }}:30080"
+        - name: SEC_DAEMON_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: SEC_CLIENT_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: SEC_NEGOTIATOR_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: SEC_ADVERTISE_STARTD_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: CONDOR_DAEMON_LIST
+          value: COLLECTOR, MASTER, NEGOTIATOR, SCHEDD, STARTD
+
+        image: "dodasts/htcondor:v0.1.0-k8s-schedd-3"
+        livenessProbe:
+          exec:
+            command:
+            - voms-proxy-info
+            - --file
+            - /root/proxy/gwms_proxy
+            - --exists
+            - --valid
+            - "6:00"
+          initialDelaySeconds: 300
+          periodSeconds: 600
+        volumeMounts:
+          - name: proxydir
+            mountPath: /root/proxy
+      volumes:
+      - name: proxydir
+        emptyDir: {}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: htc-master
+
+  replicas: 1
+---
+# Source: htcondor/templates/htc-schedd-pod.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schedd-pod
+  labels:
+    app.kubernetes.io/name: schedd-pod
+spec:
+  template:
     metadata:
-      name: schedd-pod
       labels:
-        app.kubernetes.io/name: schedd-pod
+        app.kubernetes.io/name: schedd
     spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: schedd
-        spec:
-          priorityClassName: system-node-critical
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: condor
-                    operator: In
-                    values:
-                    - schedd
-    
-            podAntiAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchExpressions:
-                  - key: app.kubernetes.io/name
-                    operator: In
-                    values:
-                    - schedd
-                topologyKey: kubernetes.io/hostname
-          hostNetwork: true
-          serviceAccountName: tts-account
-          containers:
-          - name: tts
-            imagePullPolicy: "IfNotPresent"
-            image: "dodasts/tts-cache:v0.1.3-k8s-12"
-            args:
-              - --get-proxy
-              - --period
-              - "120"
-              - "--config"
-              - "/app/.config.yaml"
-            resources:
-              requests:
-                memory: "500M"
-                cpu: "100m"
-            volumeMounts:
-              - name: proxydir
-                mountPath: /root/proxy
-              - mountPath: "/home/uwdir"
-                name: uwdir
-          - name: schedd
-            resources:
-              requests:
-                memory: "500M"
-                cpu: "100m"
-            imagePullPolicy: IfNotPresent
-            args:
-            - schedd
-            env:
-            - name: CONDOR_HOST
-              value:  "{{ condor_pub_ip }}"
-            - name: PROXY_CACHE
-              value: "{{ master_priv_ip }}:30080"
-            - name: NETWORK_INTERFACE
-              value:  "{{ condor_pub_ip }}"
-            - name: LOWPORT
-              value: "31024"
-            - name: HIGHPORT
-              value: "32048"
-            - name: SEC_DAEMON_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: SEC_CLIENT_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: SEC_NEGOTIATOR_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: SEC_ADVERTISE_STARTD_AUTHENTICATION_METHODS
-              value: CLAIMTOBE
-            - name: CONDOR_DAEMON_LIST
-              value: COLLECTOR, MASTER, NEGOTIATOR, SCHEDD, STARTD
-            securityContext:
-              capabilities:
-                add:
-                - CAP_SYS_ADMIN
-              privileged: true
-            image: "dodasts/htcondor:v0.1.0-k8s-schedd-3"
-            livenessProbe:
-              exec:
-                command:
-                - voms-proxy-info
-                - --file
-                - /root/proxy/gwms_proxy
-                - --exists
-                - --valid
-                - "6:00"
-              initialDelaySeconds: 300
-              periodSeconds: 600
-            volumeMounts:
-            - mountPath: "/var/lib/condor/spool/"
-              name: myspool
-            # TODO: implement configMap for mapfile
-            - mountPath: "/home/uwdir"
-              name: uwdir
-            - name: proxydir
-              mountPath: /root/proxy
+      priorityClassName: system-node-critical
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: condor
+                operator: In
+                values:
+                - schedd
+
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - schedd
+            topologyKey: kubernetes.io/hostname
+      hostNetwork: true
+      serviceAccountName: tts-account
+      containers:
+      - name: tts
+        imagePullPolicy: "IfNotPresent"
+        image: "dodasts/tts-cache:v0.1.3-k8s-12"
+        args:
+          - --get-proxy
+          - --period
+          - "120"
+          - "--config"
+          - "/app/.config.yaml"
+        resources:
+          requests:
+            memory: "500M"
+            cpu: "100m"
+        volumeMounts:
+          - name: proxydir
+            mountPath: /root/proxy
+          - mountPath: "/home/uwdir"
+            name: uwdir
+      - name: schedd
+        resources:
+          requests:
+            memory: "500M"
+            cpu: "100m"
+        imagePullPolicy: IfNotPresent
+        args:
+        - schedd
+        env:
+        - name: CONDOR_HOST
+          value:  "{{ condor_pub_ip }}"
+        - name: PROXY_CACHE
+          value: "{{ master_priv_ip }}:30080"
+        - name: NETWORK_INTERFACE
+          value:  "{{ condor_pub_ip }}"
+        - name: LOWPORT
+          value: "31024"
+        - name: HIGHPORT
+          value: "32048"
+        - name: SEC_DAEMON_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: SEC_CLIENT_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: SEC_NEGOTIATOR_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: SEC_ADVERTISE_STARTD_AUTHENTICATION_METHODS
+          value: CLAIMTOBE
+        - name: CONDOR_DAEMON_LIST
+          value: COLLECTOR, MASTER, NEGOTIATOR, SCHEDD, STARTD
+        securityContext:
+          capabilities:
+            add:
+            - CAP_SYS_ADMIN
+          privileged: true
+        image: "dodasts/htcondor:v0.1.0-k8s-schedd-3"
+        livenessProbe:
+          exec:
+            command:
+            - voms-proxy-info
+            - --file
+            - /root/proxy/gwms_proxy
+            - --exists
+            - --valid
+            - "6:00"
+          initialDelaySeconds: 300
+          periodSeconds: 600
+        volumeMounts:
+        - mountPath: "/var/lib/condor/spool/"
+          name: myspool
+        # TODO: implement configMap for mapfile
+        - mountPath: "/home/uwdir"
+          name: uwdir
+        - name: proxydir
+          mountPath: /root/proxy
+        - name: config
+          mountPath: "/app"
+      volumes:
+      - name: proxydir
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: ttsconfig
+      - name: myspool
+        persistentVolumeClaim:
+          claimName: schedd-claim
+      - name: uwdir
+        hostPath:
+          path: /etc/uwdir
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: schedd
+
+  replicas: 1
+---
+# Source: htcondor/templates/htc-wn-pod.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wn-pod
+  labels:
+    app.kubernetes.io/name: wn-pod
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wn
+    spec:
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+        - 8.8.8.8
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: condor
+                operator: NotIn
+                values:
+                - ccb
+                - schedd
+
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                - cvmfs
+            topologyKey: kubernetes.io/hostname
+      serviceAccountName: tts-account
+      containers:
+      - name: tts
+        imagePullPolicy: "IfNotPresent"
+        image: "dodasts/tts-cache:v0.1.3-k8s-12"
+        args:
+          - --get-proxy
+          - --period
+          - "120"
+          - "--config"
+          - "/app/.config.yaml"
+        resources:
+          limits:
+            memory: "500M"
+            cpu: "100m"
+        volumeMounts:
+          - name: proxydir
+            mountPath: /root/proxy
+      - name: wn
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          capabilities:
+            add:
+              - SYS_ADMIN
+          privileged: true
+        args:
+        - "wn"
+        env:
+        - name: CONDOR_HOST
+          value: "{{ condor_pub_ip }}"
+        - name: PROXY_CACHE
+          value: "{{ master_priv_ip }}:30080"
+        - name: CCB_ADDRESS
+          value:  "{{ condor_pub_ip }}"
+        - name: SLOT_TYPE_1
+          value: "cpus=1, mem=2000"
+        - name: NUM_CPUS
+          value: "1"
+
+        image: "dodasts/htcondor:v0.1.0-k8s-fermi-2"
+        livenessProbe:
+          exec:
+            command:
+            #- cat
+            #- /cvmfs/spiga.local.repo/test-content
+            - voms-proxy-info
+            - --file
+            - /tmp/proxy/gwms_proxy
+            - -e
+            - --valid
+            - "6:00"
+          initialDelaySeconds: 300
+          periodSeconds: 600
+        resources:
+          limits:
+            memory: "2500Mi"
+            cpu: "1.5"
+          requests:
+            memory: "1024Mi"
+            cpu: "1"
+        volumeMounts:
+        - name: cgroup
+          mountPath: /sys/fs/cgroup
+        - name: cvmfs
+          mountPath: "/cvmfs"
+          #mountPropagation: Bidirectional
+        - name: proxydir
+          mountPath: /root/proxy
+        - name: rclone-1
+          mountPath: /home/Volume_Fermi
+      volumes:
+      - name: proxydir
+        emptyDir: {}
+      - name: cvmfs
+        hostPath:
+          path: /cvmfs
+          type: Directory
+      - name: cgroup
+        hostPath:
+          path: /sys/fs/cgroup
+          type: Directory
+      - name: rclone-1
+        persistentVolumeClaim:
+          claimName: data-rclone-1
+
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wn
+
+  replicas: 1
+---
+# Source: htcondor/templates/tts-cronjob.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tts-init
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      hostNetwork: true
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+        - 8.8.8.8
+      containers:
+        - name: tts
+          imagePullPolicy: "IfNotPresent"
+          image: "dodasts/tts-cache:v0.1.3-k8s-12"
+          args:
+            - --cache-certs
+          volumeMounts:
             - name: config
               mountPath: "/app"
-          volumes:
-          - name: proxydir
-            emptyDir: {}
-          - name: config
-            configMap:
-              name: ttsconfig
-          - name: myspool
-            persistentVolumeClaim:
-              claimName: schedd-claim
-          - name: uwdir
-            hostPath:
-              path: /etc/uwdir
-      selector:
-        matchLabels:
-          app.kubernetes.io/name: schedd
-    
-      replicas: 1
-    ---
-    # Source: htcondor/templates/htc-wn-pod.yaml
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: wn-pod
-      labels:
-        app.kubernetes.io/name: wn-pod
+          resources:
+            limits:
+              memory: "500M"
+              cpu: "100m"
+            requests:
+              memory: "100M"
+              cpu: "100m"
+      volumes:
+        - name: config
+          configMap:
+            name: ttsconfig
+      restartPolicy: Never
+      serviceAccountName: tts-account
+---
+# Source: htcondor/templates/tts-cronjob.yaml
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: tts-cron
+spec:
+  schedule: "1 */2 * * *"
+  jobTemplate:
     spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: wn
-        spec:
-          dnsPolicy: None
-          dnsConfig:
-            nameservers:
-            - 8.8.8.8
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: condor
-                    operator: NotIn
-                    values:
-                    - ccb
-                    - schedd
-    
-            podAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchExpressions:
-                  - key: app.kubernetes.io/name
-                    operator: In
-                    values:
-                    - cvmfs
-                topologyKey: kubernetes.io/hostname
-          serviceAccountName: tts-account
-          containers:
-          - name: tts
-            imagePullPolicy: "IfNotPresent"
-            image: "dodasts/tts-cache:v0.1.3-k8s-12"
-            args:
-              - --get-proxy
-              - --period
-              - "120"
-              - "--config"
-              - "/app/.config.yaml"
-            resources:
-              limits:
-                memory: "500M"
-                cpu: "100m"
-            volumeMounts:
-              - name: proxydir
-                mountPath: /root/proxy
-          - name: wn
-            imagePullPolicy: IfNotPresent
-            securityContext:
-              capabilities:
-                add:
-                  - SYS_ADMIN
-              privileged: true
-            args:
-            - "wn"
-            env:
-            - name: CONDOR_HOST
-              value: "{{ condor_pub_ip }}"
-            - name: PROXY_CACHE
-              value: "{{ master_priv_ip }}:30080"
-            - name: CCB_ADDRESS
-              value:  "{{ condor_pub_ip }}"
-            - name: SLOT_TYPE_1
-              value: "cpus=1, mem=2000"
-            - name: NUM_CPUS
-              value: "1"
-    
-            image: "dodasts/htcondor:v0.1.0-k8s-fermi-2"
-            livenessProbe:
-              exec:
-                command:
-                #- cat
-                #- /cvmfs/spiga.local.repo/test-content
-                - voms-proxy-info
-                - --file
-                - /tmp/proxy/gwms_proxy
-                - -e
-                - --valid
-                - "6:00"
-              initialDelaySeconds: 300
-              periodSeconds: 600
-            resources:
-              limits:
-                memory: "2500Mi"
-                cpu: "1.5"
-              requests:
-                memory: "1024Mi"
-                cpu: "1"
-            volumeMounts:
-            - name: cgroup
-              mountPath: /sys/fs/cgroup
-            - name: cvmfs
-              mountPath: "/cvmfs"
-              #mountPropagation: Bidirectional
-            - name: proxydir
-              mountPath: /root/proxy
-            - name: rclone-1
-              mountPath: /home/Volume_Fermi
-          volumes:
-          - name: proxydir
-            emptyDir: {}
-          - name: cvmfs
-            hostPath:
-              path: /cvmfs
-              type: Directory
-          - name: cgroup
-            hostPath:
-              path: /sys/fs/cgroup
-              type: Directory
-          - name: rclone-1
-            persistentVolumeClaim:
-              claimName: data-rclone-1
-    
-    
-      selector:
-        matchLabels:
-          app.kubernetes.io/name: wn
-    
-      replicas: 1
-    ---
-    # Source: htcondor/templates/tts-cronjob.yaml
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: tts-init
-    spec:
-      backoffLimit: 2
       template:
         spec:
           hostNetwork: true
           dnsPolicy: None
           dnsConfig:
             nameservers:
-            - 8.8.8.8
+              - 8.8.8.8
           containers:
             - name: tts
               imagePullPolicy: "IfNotPresent"
@@ -582,87 +621,48 @@
             - name: config
               configMap:
                 name: ttsconfig
-          restartPolicy: Never
+          restartPolicy: OnFailure
           serviceAccountName: tts-account
-    ---
-    # Source: htcondor/templates/tts-cronjob.yaml
-    apiVersion: batch/v1beta1
-    kind: CronJob
-    metadata:
-      name: tts-cron
-    spec:
-      schedule: "1 */2 * * *"
-      jobTemplate:
-        spec:
-          template:
-            spec:
-              hostNetwork: true
-              dnsPolicy: None
-              dnsConfig:
-                nameservers:
-                  - 8.8.8.8
-              containers:
-                - name: tts
-                  imagePullPolicy: "IfNotPresent"
-                  image: "dodasts/tts-cache:v0.1.3-k8s-12"
-                  args:
-                    - --cache-certs
-                  volumeMounts:
-                    - name: config
-                      mountPath: "/app"
-                  resources:
-                    limits:
-                      memory: "500M"
-                      cpu: "100m"
-                    requests:
-                      memory: "100M"
-                      cpu: "100m"
-              volumes:
-                - name: config
-                  configMap:
-                    name: ttsconfig
-              restartPolicy: OnFailure
-              serviceAccountName: tts-account
-    ---
-    apiVersion: v1
-    kind: PersistentVolume
-    metadata:
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: data-rclone-1
+  labels:
+    name: data-rclone-1
+spec:
+  accessModes:
+  - ReadWriteMany
+  capacity:
+    storage: {{ minio.pvSize }}
+  storageClassName: rclone
+  csi:
+    driver: csi-rclone
+    volumeHandle: data-id
+    volumeAttributes:
+      remote: "s3"
+      remotePath: "home"
+      s3-provider: "Minio"
+      s3-endpoint: "{{ minio.endpoint }}"
+      s3-access-key-id: "{{ minio.access_key_id }}"
+      s3-secret-access-key: "{{ minio.access_key_key }}"
+      vfs-cache-mode: "full"
+      vfs-cache-max-size: "10G"
+      vfs-read-chunk-size: "10M"
+      vfs-read-chunk-size-limit: "100M"
+      no-check-certificate: "true"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-rclone-1
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: "{{ minio.pvcSize }}"
+  storageClassName: rclone
+  selector:
+    matchLabels:
       name: data-rclone-1
-      labels:
-        name: data-rclone-1
-    spec:
-      accessModes:
-      - ReadWriteMany
-      capacity:
-        storage: {{ minio-pv-size }}Gi
-      storageClassName: rclone
-      csi:
-        driver: csi-rclone
-        volumeHandle: data-id
-        volumeAttributes:
-          remote: "s3"
-          remotePath: "home"
-          s3-provider: "Minio"
-          s3-endpoint: "{{ minio.endpoint }}"
-          s3-access-key-id: "{{ minio.access_key_id }}"
-          s3-secret-access-key: "{{ minio.access_key_key }}"
-          vfs-cache-mode: "full"
-          vfs-cache-max-size: "10G"
-          vfs-read-chunk-size: "10M"
-          vfs-read-chunk-size-limit: "100M"
-          no-check-certificate: "true"
-    ---
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: data-rclone-1
-    spec:
-      accessModes:
-      - ReadWriteMany
-      resources:
-        requests:
-          storage: "{{ minio.pvc-size }}Gi"
-      storageClassName: rclone
-      selector:
-        matchLabels:
-          name: data-rclone-1

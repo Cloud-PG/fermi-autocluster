@@ -7,13 +7,13 @@
       shell: kubectl apply -f csi-rclone/deploy/kubernetes/ && rm -fr csi-rclone
     - name: label master
       shell: kubectl label nodes {{ collector_node_name }} --label condor=ccb
+      when: collector_node_name
     - name: label schedd
       shell: kubectl label nodes {{ schedd_node_name }} --label condor=schedd
-    - name: apply manifest
-      k8s:
-        state: present
-        definition: "{{ lookup('template', 'template/manifest.yaml') }}"
-    - name: dump template locali
+      when: schedd_node_name
+    - name: dump template locally
       template:
         src: template/manifest.yaml
         dest: manifest_fermi.yaml 
+    - name: apply manifest
+      shell: kubectl apply -f manifest_fermi.yaml 
