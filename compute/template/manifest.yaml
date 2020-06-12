@@ -251,7 +251,7 @@ spec:
         - master
         env:
         - name: NETWORK_INTERFACE
-          value:   "{{ schedd_pub_ip }}"
+          value:   "{{ condor_pub_ip }}"
         - name: CONDOR_HOST
           value:   "{{ condor_pub_ip }}"
         - name: PROXY_CACHE
@@ -359,7 +359,7 @@ spec:
         - name: PROXY_CACHE
           value: "{{ master_priv_ip }}:30080"
         - name: NETWORK_INTERFACE
-          value:  "{{ condor_pub_ip }}"
+          value:  "{{ schedd_pub_ip }}"
         - name: LOWPORT
           value: "31024"
         - name: HIGHPORT
