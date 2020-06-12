@@ -36,5 +36,67 @@ docker compose up -d
 docker exec -ti minio_minio_client_1 sh
 ~ mc --insecure admin user add myminio readwrite p6s54RT2b
 ~ mc --insecure admin policy set myminio readwrite user=readwrite
+~ cat > user.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObjectLegalHold",
+        "s3:GetObjectLegalHold",
+        "s3:GetObjectRetention",
+        "s3:PutObjectRetention",
+        "s3:DeleteObject",
+        "s3:GetObject",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:PutObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:::home/user/*"
+      ],
+      "Sid": ""
+    },
+    {
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectLegalHold",
+        "s3:GetObjectRetention",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:::home/*"
+      ],
+      "Sid": ""
+    },
+    {
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectLegalHold",
+        "s3:GetObjectRetention",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:::fermi/*"
+      ],
+      "Sid": ""
+    }
+  ]
+}
+EOF
+~ mc admin --insecure policy add myminio user user.json
+~ mc --insecure admin user add myminio user 6s54RT2bqMmUZD
+~ mc --insecure admin policy set myminio user user=user
 ```
-
