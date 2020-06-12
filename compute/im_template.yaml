@@ -261,6 +261,22 @@ topology_template:
           properties:
             # image: "ost://openstack.fisica.unipg.it/d9a41aed-3ebf-42f9-992e-ef0078d3de95"
             image: { get_input: server_image }
+      requirements:
+       # contextually this can only be a relationship type
+        - local_storage:
+            # capability is provided by Compute Node Type
+            node: schedd_pool
+            capability: tosca.capabilities.Attachment
+            relationship:
+              type: tosca.relationships.AttachesTo
+              properties:
+                location: /mnt/spool
+                device: hdb
+
+    schedd_pool:
+      type: tosca.nodes.BlockStorage
+      properties:
+        size: 50 GB
 
     k8s_server_wn:
       type: tosca.nodes.indigo.Compute
